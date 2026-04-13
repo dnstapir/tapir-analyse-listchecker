@@ -1,0 +1,13 @@
+# Ignore built binaries
+bin/
+out/
+
+# Ignore coverage reports
+coverage.out
+
+# Ignore stray configuration files
+config.toml
+
+# Ignore old files and backups
+*.old
+*.bak
