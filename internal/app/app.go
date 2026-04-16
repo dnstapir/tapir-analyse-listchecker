@@ -20,6 +20,7 @@ type Conf struct {
 	Interval    int    `toml:"interval"`
 	Observation string `toml:"observation"`
 	ListUrl     string `toml:"list_url"`
+	FullMatch   bool   `toml:"full_match"`
 	checker.Conf
 	AnalystID     string
 	Log           common.Logger
@@ -31,6 +32,7 @@ type appHandle struct {
 	id            string
 	observation   string
 	log           common.Logger
+	fullMatch     bool
 	checkerHandle *checker.Checker
 	natsHandle    nats
 	fetcherHandle fetcher
@@ -109,6 +111,13 @@ func Create(conf Conf) (*appHandle, error) {
 		return nil, err
 	}
 	a.checkerHandle = c
+
+	a.fullMatch = conf.FullMatch
+	if a.fullMatch {
+		a.log.Info("Will match full domain names against list")
+	} else {
+		a.log.Info("Will only match effective TLD plus one label against list")
+	}
 
 	a.log.Debug("Main app debug logging enabled")
 	return a, nil
@@ -240,8 +249,19 @@ func (a *appHandle) handleMsg(ctx context.Context, msg common.NatsMsg) {
 		return
 	}
 
-	if !a.checkerHandle.Check(msgDomain) {
-		a.log.Debug("Domain %q was not on list", msgDomain)
+	domainToCheck := msgDomain
+	if !a.fullMatch {
+		etldPlusOne, err := libtapir.GetETLDPlusOne(msgDomain)
+		if err != nil {
+			a.log.Warning("Could not get ETLD+1 from domain, using full name instead")
+		} else {
+			domainToCheck = etldPlusOne
+			a.log.Debug("ETLD+1 for %q is %q", msgDomain, domainToCheck)
+		}
+	}
+
+	if !a.checkerHandle.Check(domainToCheck) {
+		a.log.Debug("Domain %q was not on list", domainToCheck)
 		return
 	}
 

@@ -3,7 +3,7 @@ module github.com/dnstapir/tapir-analyse-listchecker
 go 1.26.1
 
 require (
-	github.com/dnstapir/tapir-analyse-lib v0.0.0-20260414104340-0e06dc6a4691
+	github.com/dnstapir/tapir-analyse-lib v0.0.0-20260416203222-e3559262cc1e
 	github.com/pelletier/go-toml/v2 v2.2.4
 )
 

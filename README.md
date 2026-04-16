@@ -4,6 +4,7 @@ debug = true
 interval = 120
 list_url = "https://example.com/list.txt"
 observation = "<OBSERVATION>" # Observation to be set when a domain is found on the list 
+full_match = false # Match full domain name or ETLD+1
 
 [nats]
 debug = true
