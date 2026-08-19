@@ -40,6 +40,7 @@ type appHandle struct {
 	natsHandle       nats
 	fetcherHandle    fetcher
 	markStaleAfter   time.Duration
+	checkStale       bool
 	listUrl          string
 	recentListDigest listDigest
 	ticker           *time.Ticker
@@ -121,6 +122,7 @@ func Create(conf Conf) (*appHandle, error) {
 		a.markStaleAfter = 0
 	} else {
 		a.markStaleAfter = time.Duration(conf.MarkStaleAfter) * time.Second
+		a.checkStale = true
 	}
 
 	c, err := checker.Create(conf.Conf)
@@ -277,7 +279,7 @@ func (a *appHandle) handleMsg(ctx context.Context, msg common.NatsMsg) {
 	a.recentListDigest.RLock()
 	listAge := time.Since(a.recentListDigest.t)
 	a.recentListDigest.RUnlock()
-	if listAge >= a.markStaleAfter {
+	if a.checkStale && listAge >= a.markStaleAfter {
 		a.log.Warning("List is stale, will not set any observations")
 		return
 	}
