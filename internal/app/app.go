@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"hash/adler32"
 	"math"
 	"sync"
 	"time"
@@ -16,11 +18,12 @@ const c_N_HANDLERS = 3
 const c_NATS_DELIM = common.NATS_DELIM
 
 type Conf struct {
-	Debug       bool   `toml:"debug"`
-	Interval    int    `toml:"interval"`
-	Observation string `toml:"observation"`
-	ListUrl     string `toml:"list_url"`
-	FullMatch   bool   `toml:"full_match"`
+	Debug          bool   `toml:"debug"`
+	Interval       int    `toml:"interval"`
+	Observation    string `toml:"observation"`
+	ListUrl        string `toml:"list_url"`
+	FullMatch      bool   `toml:"full_match"`
+	MarkStaleAfter int    `toml:"mark_stale_after"` /* In seconds */
 	checker.Conf
 	AnalystID     string
 	Log           common.Logger
@@ -29,17 +32,25 @@ type Conf struct {
 }
 
 type appHandle struct {
-	id            string
-	observation   string
-	log           common.Logger
-	fullMatch     bool
-	checkerHandle *checker.Checker
-	natsHandle    nats
-	fetcherHandle fetcher
-	listUrl       string
-	ticker        *time.Ticker
-	exitCh        chan<- common.Exit
+	id               string
+	observation      string
+	log              common.Logger
+	fullMatch        bool
+	checkerHandle    *checker.Checker
+	natsHandle       nats
+	fetcherHandle    fetcher
+	markStaleAfter   time.Duration
+	listUrl          string
+	recentListDigest listDigest
+	ticker           *time.Ticker
+	exitCh           chan<- common.Exit
 	pm
+}
+
+type listDigest struct {
+	sync.RWMutex
+	t time.Time
+	d []byte
 }
 
 type pm struct {
@@ -105,6 +116,13 @@ func Create(conf Conf) (*appHandle, error) {
 		a.log.Warning("No interval set. Won't refresh list.")
 	}
 
+	if conf.MarkStaleAfter <= 0 {
+		a.log.Warning("Will not mark list as stale if stops changing")
+		a.markStaleAfter = 0
+	} else {
+		a.markStaleAfter = time.Duration(conf.MarkStaleAfter) * time.Second
+	}
+
 	c, err := checker.Create(conf.Conf)
 	if err != nil {
 		a.log.Error("Could not create checker handle: %s", err)
@@ -135,10 +153,19 @@ func (a *appHandle) Run(ctx context.Context, exitCh chan<- common.Exit) {
 		a.log.Error("Couldn't run initial fetch of list data: %s", err)
 	}
 
+	hasher := adler32.New()
+
 	for d := range fetchCh {
 		a.log.Debug("Got domain %q from list", d) // TODO remove
-		a.checkerHandle.Add(libtapir.NormalizeDomainName(d))
+		dname := libtapir.NormalizeDomainName(d)
+		a.checkerHandle.Add(dname)
+		hasher.Write([]byte(dname))
 	}
+
+	a.recentListDigest.Lock()
+	a.recentListDigest.t = time.Now()
+	a.recentListDigest.d = hasher.Sum(nil)
+	a.recentListDigest.Unlock()
 
 	natsChan, err = a.natsHandle.ActivateSubscription(ctx)
 	if err != nil {
@@ -222,17 +249,36 @@ func (a *appHandle) handleTick(ctx context.Context, epoch int64) {
 
 	a.checkerHandle.Empty()
 
+	hasher := adler32.New()
 	a.log.Debug("Re-populating checker")
 	for d := range fetchCh {
 		a.log.Debug("Got domain %q from renewed list", d)
-		a.checkerHandle.Add(libtapir.NormalizeDomainName(d))
+		dname := libtapir.NormalizeDomainName(d)
+		a.checkerHandle.Add(dname)
+		hasher.Write([]byte(dname))
 	}
+
+	checksum := hasher.Sum(nil)
+	a.recentListDigest.Lock()
+	if !bytes.Equal(a.recentListDigest.d, checksum) {
+		a.recentListDigest.t = time.Now()
+		a.recentListDigest.d = checksum
+	}
+	a.recentListDigest.Unlock()
 }
 
 func (a *appHandle) handleMsg(ctx context.Context, msg common.NatsMsg) {
 	a.log.Debug("Handling %d byte message on subject %s", len(msg.Data), msg.Subject)
 	if len(msg.Data) <= 0 {
 		a.log.Warning("Msg had no data, probably garbage. Won't handle...")
+		return
+	}
+
+	a.recentListDigest.RLock()
+	listAge := time.Since(a.recentListDigest.t)
+	a.recentListDigest.RUnlock()
+	if listAge >= a.markStaleAfter {
+		a.log.Warning("List is stale, will not set any observations")
 		return
 	}
 
