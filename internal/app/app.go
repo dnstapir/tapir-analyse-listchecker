@@ -16,6 +16,7 @@ import (
 
 const c_N_HANDLERS = 3
 const c_NATS_DELIM = common.NATS_DELIM
+const c_HASH_DNAME_SEP = ";"
 
 type Conf struct {
 	Debug          bool   `toml:"debug"`
@@ -122,6 +123,10 @@ func Create(conf Conf) (*appHandle, error) {
 		a.markStaleAfter = 0
 	} else {
 		a.markStaleAfter = time.Duration(conf.MarkStaleAfter) * time.Second
+		if a.markStaleAfter <= 0 {
+			a.log.Error("Integer overflow in mark stale duration")
+			return nil, common.ErrBadParam
+		}
 		a.checkStale = true
 	}
 
@@ -162,6 +167,7 @@ func (a *appHandle) Run(ctx context.Context, exitCh chan<- common.Exit) {
 		dname := libtapir.NormalizeDomainName(d)
 		a.checkerHandle.Add(dname)
 		hasher.Write([]byte(dname))
+		hasher.Write([]byte(c_HASH_DNAME_SEP))
 	}
 
 	a.recentListDigest.Lock()
@@ -258,6 +264,7 @@ func (a *appHandle) handleTick(ctx context.Context, epoch int64) {
 		dname := libtapir.NormalizeDomainName(d)
 		a.checkerHandle.Add(dname)
 		hasher.Write([]byte(dname))
+		hasher.Write([]byte(c_HASH_DNAME_SEP))
 	}
 
 	checksum := hasher.Sum(nil)

@@ -5,7 +5,7 @@ interval = 120
 list_url = "https://example.com/list.txt"
 observation = "<OBSERVATION>" # Observation to be set when a domain is found on the list 
 full_match = false # Match full domain name or ETLD+1
-mark_stale_after = 240 # If list has not been renewed within this interval, stop flagging domains
+mark_stale_after = 240 # If list content has not changed within this many seconds, stop flagging domains
 
 [nats]
 debug = true
