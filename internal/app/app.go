@@ -158,6 +158,8 @@ func (a *appHandle) Run(ctx context.Context, exitCh chan<- common.Exit) {
 	fetchCh, err := a.fetcherHandle.Fetch(a.listUrl)
 	if err != nil {
 		a.log.Error("Couldn't run initial fetch of list data: %s", err)
+		a.exitCh <- common.Exit{ID: a.id, Err: common.ErrFatal}
+		return
 	}
 
 	hasher := adler32.New()
