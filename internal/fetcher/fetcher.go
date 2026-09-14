@@ -41,12 +41,12 @@ func (f *fetcher) fetchHTTP(u *url.URL) (<-chan string, error) {
 
 	resp, err := http.Get(u.String())
 	if err != nil {
-		f.log.Error("Could not GET list from %q", u.String())
+		f.log.Error("Could not GET list from %s", u.Host)
 		return nil, err
 	}
 
 	contentType := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(contentType, "text/plain;") {
+	if !strings.Contains(contentType, "text/plain") {
 		f.log.Error("Unknown content type %q in response", contentType)
 		return nil, common.ErrNotCompleted
 	}

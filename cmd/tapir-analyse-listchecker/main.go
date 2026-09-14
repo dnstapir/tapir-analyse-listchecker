@@ -21,6 +21,7 @@ import (
 )
 
 const env_DNSTAPIR_NATS_URL = "DNSTAPIR_NATS_URL"
+const env_DNSTAPIR_LIST_URL = "DNSTAPIR_LIST_URL"
 
 const c_ANALYST_IDENTIFIER = "tapir-analyse-listchecker"
 
@@ -146,6 +147,13 @@ func main() {
 	 ********************** SET UP MAIN APP ***************************
 	 ******************************************************************
 	 */
+
+	envListUrl, overrideListUrl := os.LookupEnv(env_DNSTAPIR_LIST_URL)
+	if overrideListUrl {
+		mainConf.ListUrl = envListUrl
+		log.Info("Overriding list url with environment variable '%s'", env_DNSTAPIR_LIST_URL)
+	}
+
 	applog := logger.New(
 		logger.Conf{
 			Debug: debugFlag || mainConf.Debug,
